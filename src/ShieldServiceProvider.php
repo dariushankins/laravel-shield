@@ -11,39 +11,30 @@
 
 declare(strict_types=1);
 
-namespace Vinkla\Shield;
+namespace Dariushankins\Shield;
 
 use Illuminate\Contracts\Container\Container;
-use Illuminate\Foundation\Application as LaravelApplication;
 use Illuminate\Support\ServiceProvider;
-use Laravel\Lumen\Application as LumenApplication;
 
 class ShieldServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        $this->setupConfig();
-    }
-
-    protected function setupConfig(): void
-    {
-        $source = realpath($raw = __DIR__ . '/../config/shield.php') ?: $raw;
-
-        if ($this->app instanceof LaravelApplication && $this->app->runningInConsole()) {
-            $this->publishes([$source => config_path('shield.php')]);
-        } elseif ($this->app instanceof LumenApplication) {
-            $this->app->configure('shield');
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__ . '/../config/shield.php' => $this->app->configPath('shield.php'),
+            ], 'shield-config');
         }
-
-        $this->mergeConfigFrom($source, 'shield');
     }
 
     public function register(): void
     {
-        $this->app->singleton('shield', function (Container $app) {
-            $config = $app['config']['shield.users'];
+        $this->mergeConfigFrom(__DIR__ . '/../config/shield.php', 'shield');
 
-            return new Shield($config);
+        $this->app->scoped('shield', function (Container $app) {
+            $config = $app['config']->get('shield.users', []);
+
+            return new Shield(is_array($config) ? $config : []);
         });
 
         $this->app->alias('shield', Shield::class);
@@ -53,6 +44,7 @@ class ShieldServiceProvider extends ServiceProvider
     {
         return [
             'shield',
+            Shield::class,
         ];
     }
 }

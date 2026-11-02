@@ -1,5 +1,5 @@
 {
-    "name": "vinkla/shield",
+    "name": "dariushankins/shield",
     "description": "A HTTP basic auth middleware for Laravel",
     "license": "MIT",
     "keywords": [
@@ -13,40 +13,45 @@
     "authors": [
         {
             "name": "Vincent Klaiber",
-            "homepage": "https://github.com/vinkla"
+            "homepage": "https://github.com/Dariushankins/laravel-shield"
         }
     ],
     "require": {
-        "php": "^8.2",
-        "illuminate/support": "^v12.30.1",
-        "symfony/http-kernel": "^6.2"
+        "php": "^8.4",
+        "illuminate/contracts": "^13.0",
+        "illuminate/http": "^13.0",
+        "illuminate/support": "^13.0",
+        "symfony/http-kernel": "^7.4 || ^8.0"
     },
     "require-dev": {
-        "orchestra/testbench": "^8.0",
-        "phpunit/phpunit": "^11.0"
+        "orchestra/testbench": "^11.0",
+        "phpunit/phpunit": "^11.5.50",
+        "symfony/translation": "^7.4 || ^8.0"
     },
-    "minimum-stability": "dev",
-    "prefer-stable": true,
     "autoload": {
         "psr-4": {
-            "Vinkla\\Shield\\": "src/"
+            "Dariushankins\\Shield\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Vinkla\\Tests\\Shield\\": "tests/"
+            "Dariushankins\\Tests\\Shield\\": "tests/"
         }
     },
     "config": {
-        "preferred-install": "dist"
+        "preferred-install": "dist",
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "@php vendor/bin/phpunit"
     },
     "extra": {
         "branch-alias": {
-            "dev-master": "9.0-dev"
+            "dev-laravel13": "10.0.x-dev"
         },
         "laravel": {
             "providers": [
-                "Vinkla\\Shield\\ShieldServiceProvider"
+                "Dariushankins\\Shield\\ShieldServiceProvider"
             ]
         }
     }

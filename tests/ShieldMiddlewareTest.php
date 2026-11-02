@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace Vinkla\Tests\Shield;
+namespace Dariushankins\Tests\Shield;
 
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
-use Vinkla\Shield\Shield;
-use Vinkla\Shield\ShieldMiddleware;
+use Dariushankins\Shield\Shield;
+use Dariushankins\Shield\ShieldMiddleware;
 
 class ShieldMiddlewareTest extends AbstractTestCase
 {

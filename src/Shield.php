@@ -11,20 +11,22 @@
 
 declare(strict_types=1);
 
-namespace Vinkla\Shield;
+namespace Dariushankins\Shield;
 
 class Shield
 {
-    protected string $currentUser;
+    protected ?string $currentUser = null;
 
     public function __construct(
-        protected array $users
+        protected array $users,
     ) {
         //
     }
 
-    public function verify(string|null $username, string|null $password, string|null $user = null): bool
+    public function verify(?string $username, ?string $password, ?string $user = null): bool
     {
+        $this->currentUser = null;
+
         if ($username === null || $password === null) {
             return false;
         }
@@ -32,11 +34,21 @@ class Shield
         $users = $this->getUsers($user);
 
         foreach ($users as $user => $credentials) {
+            if (!is_array($credentials) || count($credentials) !== 2) {
+                continue;
+            }
+
+            [$usernameHash, $passwordHash] = array_values($credentials);
+
+            if (!is_string($usernameHash) || !is_string($passwordHash)) {
+                continue;
+            }
+
             if (
-                password_verify($username, reset($credentials)) &&
-                password_verify($password, end($credentials))
+                password_verify($username, $usernameHash)
+                && password_verify($password, $passwordHash)
             ) {
-                $this->currentUser = $user;
+                $this->currentUser = (string) $user;
 
                 return true;
             }
@@ -45,7 +57,7 @@ class Shield
         return false;
     }
 
-    protected function getUsers(string $user = null): array
+    protected function getUsers(?string $user = null): array
     {
         if ($user !== null) {
             return array_intersect_key($this->users, array_flip((array) $user));
@@ -54,7 +66,7 @@ class Shield
         return $this->users;
     }
 
-    public function getCurrentUser(): string
+    public function getCurrentUser(): ?string
     {
         return $this->currentUser;
     }

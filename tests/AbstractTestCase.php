@@ -11,17 +11,17 @@
 
 declare(strict_types=1);
 
-namespace Vinkla\Tests\Shield;
+namespace Dariushankins\Tests\Shield;
 
 use Orchestra\Testbench\TestCase;
-use Vinkla\Shield\ShieldServiceProvider;
+use Dariushankins\Shield\ShieldServiceProvider;
 
 abstract class AbstractTestCase extends TestCase
 {
     protected function getPackageProviders($app)
     {
         return [
-            ShieldServiceProvider::class
+            ShieldServiceProvider::class,
         ];
     }
 

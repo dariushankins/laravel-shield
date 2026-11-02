@@ -1,0 +1,829 @@
+diff --git a/.gitattributes b/.gitattributes
+index c3ab66e..79ab343 100644
+--- a/.gitattributes
++++ b/.gitattributes
+@@ -6,4 +6,3 @@
+ /.gitattributes export-ignore
+ /.gitignore export-ignore
+ /phpunit.xml.dist export-ignore
+-/README.md export-ignore
+diff --git a/.github/workflows/php-cs-fixer.yml b/.github/workflows/php-cs-fixer.yml
+index 80273d1..5272d3a 100644
+--- a/.github/workflows/php-cs-fixer.yml
++++ b/.github/workflows/php-cs-fixer.yml
+@@ -4,6 +4,7 @@ on:
+   push:
+     branches:
+       - master
++      - laravel13
+   pull_request:
+ 
+ jobs:
+@@ -16,7 +17,7 @@ jobs:
+       - uses: actions/checkout@v4
+       - uses: shivammathur/setup-php@v2
+         with:
+-          php-version: 8.3
++          php-version: '8.4'
+           coverage: xdebug
+           tools: php-cs-fixer, cs2pr
+       - run: php-cs-fixer fix . --dry-run --rules=@PER-CS --format=checkstyle | cs2pr
+diff --git a/.github/workflows/phpunit.yml b/.github/workflows/phpunit.yml
+index 5851ca6..0af5512 100644
+--- a/.github/workflows/phpunit.yml
++++ b/.github/workflows/phpunit.yml
+@@ -1,26 +1,34 @@
+ name: PHPUnit
+ 
+-on:
+-  push:
+-    branches:
+-      - master
+-  pull_request:
++on: [push, pull_request, workflow_dispatch]
++
++permissions:
++  contents: read
+ 
+ jobs:
+-  run:
++  test:
+     runs-on: ubuntu-latest
+ 
+     strategy:
++      fail-fast: false
+       matrix:
+-        php: [8.1, 8.2, 8.3]
++        php: ['8.4', '8.5']
++        dependencies: [highest, lowest]
+ 
+-    name: PHP ${{ matrix.php }}
++    name: PHP ${{ matrix.php }} / Laravel 13 / ${{ matrix.dependencies }}
+ 
+     steps:
+       - uses: actions/checkout@v4
+       - uses: shivammathur/setup-php@v2
+         with:
+           php-version: ${{ matrix.php }}
+-          coverage: xdebug
+-      - run: composer install --prefer-dist --no-interaction
+-      - run: vendor/bin/phpunit --coverage-text
++          extensions: mbstring, dom, xml, xmlwriter, pdo_sqlite
++          coverage: none
++          tools: composer:v2
++      - run: composer validate --strict
++      - if: matrix.dependencies == 'highest'
++        run: composer update --prefer-dist --no-interaction --no-progress
++      - if: matrix.dependencies == 'lowest'
++        run: composer update --prefer-lowest --prefer-stable --prefer-dist --no-interaction --no-progress
++      - run: composer check-platform-reqs
++      - run: composer test -- --display-all-issues
+diff --git a/.gitignore b/.gitignore
+index 81b9258..6fa91d1 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,3 +1,5 @@
+ composer.lock
+ phpunit.xml
+ vendor
++.phpunit.cache
++.php-cs-fixer.cache
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+new file mode 100644
+index 0000000..70c321a
+--- /dev/null
++++ b/CHANGELOG.md
+@@ -0,0 +1,16 @@
++# Changelog
++
++## 10.0.0 — independent Laravel 13 port
++
++- Require PHP 8.4+, Laravel 13 components, and Symfony HTTP Kernel 7.4 or 8.x.
++- Upgrade tests to Orchestra Testbench 11 and PHPUnit 11.5.
++- Replace the implicitly nullable `getUsers()` parameter with an explicit nullable type.
++- Type the middleware request and keep its existing mixed response contract.
++- Merge configuration during service provider registration; add `shield-config` publication tag.
++- Use a scoped container binding; clear the current user at the start of each verification.
++- Return null from `getCurrentUser()` when no user is authenticated.
++- Reject malformed credential entries without a runtime exception.
++- Preserve package discovery, the original namespace, hashed credential configuration,
++  container alias, named user restrictions, and HTTP Basic challenge.
++- Add HTTP integration, configuration, lifecycle, and invalid-credential regression tests.
++- Document Laravel 13's `bootstrap/app.php` middleware registration and local installation.
+diff --git a/PORTING.md b/PORTING.md
+new file mode 100644
+index 0000000..9399742
+--- /dev/null
++++ b/PORTING.md
+@@ -0,0 +1,67 @@
++# Port provenance and verification
++
++## Source
++
++- Upstream: https://github.com/vinkla/laravel-shield
++- Source branch: `master`
++- Source commit: `f0f44e5b1e49b91c6239142325d350687c38d14f`
++- Port branch: `laravel13`
++- Port release identifier: `10.0.0` (independent release, not published upstream)
++- License: MIT; original license and copyright retained.
++
++## Verification performed
++
++The complete suite passed in all four combinations below. Each run executed
++**28 tests and 76 assertions**, without PHP or PHPUnit deprecation notices.
++
++| PHP runtime | Dependency selection | Laravel | Testbench | PHPUnit | HTTP Kernel |
++| --- | --- | --- | --- | --- | --- |
++| 8.4.23 | Highest stable | 13.39.0 | 11.3.0 | 11.5.57 | 8.1.10 |
++| 8.5.8 | Highest stable | 13.39.0 | 11.3.0 | 11.5.57 | 8.1.10 |
++| 8.4.23 | Lowest permitted stable | 13.30.0 | 11.0.0 | 11.5.50 | 7.4.12 |
++| 8.5.8 | Lowest permitted stable | 13.30.0 | 11.0.0 | 11.5.50 | 7.4.12 |
++
++The lowest selection reflects the versions Composer can currently resolve while
++respecting its security advisory checks and the full test-tool constraints.
++Individual earlier Laravel 13 patch releases were not separately executed.
++
++Additional checks passed:
++
++- `composer validate --strict`.
++- `composer check-platform-reqs` on PHP 8.4.
++- PHP syntax checks on every source, config, and test PHP file.
++- PER-CS style check and `git diff --check`.
++- Composer's dependency updates reported no security vulnerability advisories.
++
++A separate minimal Laravel 13.39 application installed this package as
++`vinkla/shield:10.0.0` through the documented path repository, with the normal
++Laravel framework dependency and no Testbench dependency. It passed these checks:
++
++1. Composer package discovery lists the Shield provider.
++2. Laravel automatically registers and boots that provider.
++3. A protected route rejects missing credentials with HTTP 401.
++4. That rejection includes `WWW-Authenticate: Basic`.
++5. Valid configured hashed credentials return HTTP 200.
++6. The route receives the expected authenticated user key.
++7. `vendor:publish --tag=shield-config` succeeds.
++8. The published config file exists.
++9. `config:cache` succeeds and writes Laravel's configuration cache.
++
++## Authentication changes
++
++Hashed username/password verification and the `shield:<user>` restriction remain
++in place. Missing credentials or malformed two-element credential entries deny
++access. A failed verification clears a previous successful identity. A new
++container scope receives a new Shield instance.
++
++`getCurrentUser()` returns null when unauthenticated. Callers or subclasses that
++assumed an always-present string should account for that change. This port
++removes the legacy Lumen-specific provider setup and targets Laravel 13 only.
++
++## Contents
++
++The archive includes full package source, config, original license, tests,
++Composer metadata, CI workflows, README installation instructions, changelog,
++and this verification record. `UPSTREAM.patch` contains the corresponding diff
++against the upstream source commit. Dependencies, local PHP runtimes, secrets,
++and Git metadata are excluded.
+diff --git a/README.md b/README.md
+index fa4d84c..01f2b0f 100644
+--- a/README.md
++++ b/README.md
+@@ -1,64 +1,140 @@
+-# Laravel Shield
++# Laravel Shield — Laravel 13 port
+ 
+-This package used to be an HTTP basic auth middleware for Laravel. However, it is now deprecated as I no longer use it personally. Laravel already has built-in basic auth support for their web guard. 
++HTTP Basic authentication middleware using configured, hashed credentials. This
++port targets **Laravel 13** and **PHP 8.4 or later within PHP 8.x**. It keeps the
++`vinkla/shield` Composer name, `Vinkla\Shield` namespace, configuration keys, and
++named-user middleware syntax.
+ 
+-If you need simpler basic auth for your API, instead of depending on a third-party library, you can add it yourself. Please follow the guide below.
++The original [vinkla/laravel-shield](https://github.com/vinkla/laravel-shield)
++repository is archived. This is an independent compatibility port, not an
++upstream release. The original MIT license and copyright are retained.
+ 
+-To begin, update your `.env` file with the following details:
++## Install this downloaded port
++
++Extract the archive in your Laravel application directory. It contains one
++`laravel-shield/` directory. Move that directory into `packages/`:
+ 
+ ```bash
+-BASIC_AUTH_USER=your-username
+-BASIC_AUTH_PASSWORD=your-password
++mkdir -p packages
++mv laravel-shield packages/laravel-shield
++composer config repositories.laravel-shield '{"type":"path","url":"packages/laravel-shield","options":{"symlink":false,"versions":{"vinkla/shield":"10.0.0"}}}'
++composer require 'vinkla/shield:^10.0' --with-all-dependencies
++php artisan vendor:publish --tag=shield-config
+ ```
+ 
+-Modify your `config/auth.php` file as follows:
++The path repository above installs **this port**. Running `composer require
++vinkla/shield` without that repository selects the original package from
++Packagist. Deploy `packages/laravel-shield/` with your application so future
++Composer installs can still find it. Do not edit `vendor/` directly.
++
++The service provider is registered through Laravel package discovery. If your
++application disables discovery, add `Vinkla\Shield\ShieldServiceProvider::class`
++to `bootstrap/providers.php`.
++
++## Configure credentials
++
++Both the username and password must be **password hashes**, not plaintext. For
++example, in `php artisan tinker`:
+ 
+ ```php
+-'basic' => [
+-    'user' => env('BASIC_AUTH_USER'),
+-    'password' => env('BASIC_AUTH_PASSWORD'),
+-],
++password_hash('your-username', PASSWORD_BCRYPT);
++password_hash('your-password', PASSWORD_BCRYPT);
++```
++
++Copy the two resulting hashes into `.env`, using single quotes to preserve the
++hash characters:
++
++```dotenv
++SHIELD_USER='$2y$...your-username-hash...'
++SHIELD_PASSWORD='$2y$...your-password-hash...'
+ ```
+ 
+-Finally, create a middleware that resembles the code below:
++The published `config/shield.php` reads these values. Additional named users
++can be configured with the same two-element structure:
+ 
+ ```php
+-<?php
++'users' => [
++    'default' => [env('SHIELD_USER'), env('SHIELD_PASSWORD')],
++    'admin' => [env('SHIELD_ADMIN_USER'), env('SHIELD_ADMIN_PASSWORD')],
++],
++```
++
++After changing configuration on a server that caches it, run:
++
++```bash
++php artisan config:cache
++```
+ 
+-declare(strict_types=1);
++Missing or malformed hashes deny access with HTTP 401 instead of causing a
++TypeError. Shield does not authenticate database users or create a login session.
++Use HTTPS when sending Basic authentication credentials.
+ 
+-namespace App\Http\Middleware;
++## Register middleware in Laravel 13
+ 
+-use Illuminate\Http\Request;
+-use Symfony\Component\HttpFoundation\Response;
+-use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
++Add the alias to your existing `withMiddleware` callback in `bootstrap/app.php`:
+ 
+-class BasicAuthMiddleware
+-{
+-    public function handle(Request $request, Closure $next): Response
+-    {
+-        $user = config('auth.basic.user');
+-        $password = config('auth.basic.password');
++```php
++use Illuminate\Foundation\Configuration\Middleware;
++use Vinkla\Shield\ShieldMiddleware;
++
++->withMiddleware(function (Middleware $middleware): void {
++    $middleware->alias([
++        'shield' => ShieldMiddleware::class,
++    ]);
++})
++```
+ 
+-        if (
+-            $request->getUser() !== $user ||
+-            $request->getPassword() !== $password
+-        ) {
+-            throw new UnauthorizedHttpException('Basic');
+-        }
++Protect a route using any configured user, or restrict it to one named entry:
++
++```php
++use Illuminate\Support\Facades\Route;
+ 
+-        return $next($request);
+-    }
+-}
++Route::get('/preview', fn () => 'Protected')->middleware('shield');
++Route::get('/admin-preview', fn () => 'Admin only')->middleware('shield:admin');
+ ```
+ 
+-That's it! You can now use the middleware in your routes.
++Alternatively, attach `Vinkla\Shield\ShieldMiddleware::class` directly to a
++route without registering an alias.
++
++Rejected requests return HTTP 401 and the `WWW-Authenticate: Basic` challenge.
++
++## Access the authenticated entry
+ 
+ ```php
+-use App\Http\Middleware\BasicAuthMiddleware;
+-use App\Models\User;
++use Vinkla\Shield\Shield;
++
++$user = app(Shield::class)->getCurrentUser(); // e.g. 'default', 'admin', or null
++```
++
++The return value is now `?string`: it is `null` before a successful verification
++and after a failed verification. Previously it could access an uninitialized
++property or retain the previous successful user. The container binding is scoped
++so Laravel worker lifecycles clear it between requests/jobs.
++
++## Upgrade notes
++
++- Requires PHP `^8.4` and Laravel components `^13.0`.
++- Supports Symfony HTTP Kernel `^7.4 || ^8.0`.
++- Fixes PHP 8.4's implicitly nullable parameter deprecation.
++- Preserves bcrypt/Argon password-hash verification; no plaintext fallback.
++- Loads default configuration during provider registration, including early
++  container resolution, while respecting Laravel's cached configuration.
++- Supports `vendor:publish --tag=shield-config`; existing provider-based
++  publication commands also work.
++- This port targets Laravel 13. Legacy Laravel and Lumen are outside its scope.
++- `ShieldMiddleware::handle()` now explicitly accepts an Illuminate request.
++- `Shield::getCurrentUser()` now returns `?string`; adjust subclass overrides
++  and callers that assumed an authenticated user always exists.
+ 
+-Route::get('api/users', function () {
+-    return User::all();
+-})->middleware(BasicAuthMiddleware::class);
++## Development
++
++```bash
++composer install
++composer validate --strict
++composer check-platform-reqs
++composer test -- --display-all-issues
+ ```
++
++GitHub Actions is configured for PHP 8.4 and 8.5, each with lowest and highest
++compatible stable dependencies. See `PORTING.md` for the source baseline and
++local verification results.
+diff --git a/composer.json b/composer.json
+index b5b8e59..e3f98dd 100644
+--- a/composer.json
++++ b/composer.json
+@@ -17,16 +17,17 @@
+         }
+     ],
+     "require": {
+-        "php": "^8.1",
+-        "illuminate/support": "^10.0",
+-        "symfony/http-kernel": "^6.2"
++        "php": "^8.4",
++        "illuminate/contracts": "^13.0",
++        "illuminate/http": "^13.0",
++        "illuminate/support": "^13.0",
++        "symfony/http-kernel": "^7.4 || ^8.0"
+     },
+     "require-dev": {
+-        "orchestra/testbench": "^8.0",
+-        "phpunit/phpunit": "^10.0"
++        "orchestra/testbench": "^11.0",
++        "phpunit/phpunit": "^11.5.50",
++        "symfony/translation": "^7.4 || ^8.0"
+     },
+-    "minimum-stability": "dev",
+-    "prefer-stable": true,
+     "autoload": {
+         "psr-4": {
+             "Vinkla\\Shield\\": "src/"
+@@ -38,11 +39,15 @@
+         }
+     },
+     "config": {
+-        "preferred-install": "dist"
++        "preferred-install": "dist",
++        "sort-packages": true
++    },
++    "scripts": {
++        "test": "@php vendor/bin/phpunit"
+     },
+     "extra": {
+         "branch-alias": {
+-            "dev-master": "9.0-dev"
++            "dev-laravel13": "10.0.x-dev"
+         },
+         "laravel": {
+             "providers": [
+diff --git a/phpunit.xml.dist b/phpunit.xml.dist
+index d2915c1..1d9aee9 100644
+--- a/phpunit.xml.dist
++++ b/phpunit.xml.dist
+@@ -1,10 +1,10 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" bootstrap="vendor/autoload.php" cacheResult="false" colors="true" xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.0/phpunit.xsd">
+-  <coverage>
++<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" bootstrap="vendor/autoload.php" cacheResult="false" colors="true" failOnWarning="true" failOnRisky="true" failOnDeprecation="true" failOnPhpunitDeprecation="true" xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.5/phpunit.xsd">
++  <source>
+     <include>
+       <directory suffix=".php">./src</directory>
+     </include>
+-  </coverage>
++  </source>
+   <testsuites>
+     <testsuite name="Test Suite">
+       <directory suffix="Test.php">./tests</directory>
+diff --git a/src/Shield.php b/src/Shield.php
+index a99a6da..6d4382b 100644
+--- a/src/Shield.php
++++ b/src/Shield.php
+@@ -15,16 +15,18 @@ namespace Vinkla\Shield;
+ 
+ class Shield
+ {
+-    protected string $currentUser;
++    protected ?string $currentUser = null;
+ 
+     public function __construct(
+-        protected array $users
++        protected array $users,
+     ) {
+         //
+     }
+ 
+-    public function verify(string|null $username, string|null $password, string|null $user = null): bool
++    public function verify(?string $username, ?string $password, ?string $user = null): bool
+     {
++        $this->currentUser = null;
++
+         if ($username === null || $password === null) {
+             return false;
+         }
+@@ -32,11 +34,21 @@ class Shield
+         $users = $this->getUsers($user);
+ 
+         foreach ($users as $user => $credentials) {
++            if (!is_array($credentials) || count($credentials) !== 2) {
++                continue;
++            }
++
++            [$usernameHash, $passwordHash] = array_values($credentials);
++
++            if (!is_string($usernameHash) || !is_string($passwordHash)) {
++                continue;
++            }
++
+             if (
+-                password_verify($username, reset($credentials)) &&
+-                password_verify($password, end($credentials))
++                password_verify($username, $usernameHash)
++                && password_verify($password, $passwordHash)
+             ) {
+-                $this->currentUser = $user;
++                $this->currentUser = (string) $user;
+ 
+                 return true;
+             }
+@@ -45,7 +57,7 @@ class Shield
+         return false;
+     }
+ 
+-    protected function getUsers(string $user = null): array
++    protected function getUsers(?string $user = null): array
+     {
+         if ($user !== null) {
+             return array_intersect_key($this->users, array_flip((array) $user));
+@@ -54,7 +66,7 @@ class Shield
+         return $this->users;
+     }
+ 
+-    public function getCurrentUser(): string
++    public function getCurrentUser(): ?string
+     {
+         return $this->currentUser;
+     }
+diff --git a/src/ShieldMiddleware.php b/src/ShieldMiddleware.php
+index 7bfcb4e..8685797 100644
+--- a/src/ShieldMiddleware.php
++++ b/src/ShieldMiddleware.php
+@@ -14,22 +14,21 @@ declare(strict_types=1);
+ namespace Vinkla\Shield;
+ 
+ use Closure;
++use Illuminate\Http\Request;
+ use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
+ 
+ class ShieldMiddleware
+ {
+     public function __construct(
+-        protected Shield $shield
++        protected Shield $shield,
+     ) {
+         //
+     }
+ 
+     /**
+-     * @param \Illuminate\Http\Request $request
+      * @throws \Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException
+-     * @return mixed
+      */
+-    public function handle($request, Closure $next, ?string $user = null): mixed
++    public function handle(Request $request, Closure $next, ?string $user = null): mixed
+     {
+         if ($this->shield->verify($request->getUser(), $request->getPassword(), $user) === false) {
+             throw new UnauthorizedHttpException('Basic');
+diff --git a/src/ShieldServiceProvider.php b/src/ShieldServiceProvider.php
+index 2441399..3d65c08 100644
+--- a/src/ShieldServiceProvider.php
++++ b/src/ShieldServiceProvider.php
+@@ -14,36 +14,27 @@ declare(strict_types=1);
+ namespace Vinkla\Shield;
+ 
+ use Illuminate\Contracts\Container\Container;
+-use Illuminate\Foundation\Application as LaravelApplication;
+ use Illuminate\Support\ServiceProvider;
+-use Laravel\Lumen\Application as LumenApplication;
+ 
+ class ShieldServiceProvider extends ServiceProvider
+ {
+     public function boot(): void
+     {
+-        $this->setupConfig();
+-    }
+-
+-    protected function setupConfig(): void
+-    {
+-        $source = realpath($raw = __DIR__ . '/../config/shield.php') ?: $raw;
+-
+-        if ($this->app instanceof LaravelApplication && $this->app->runningInConsole()) {
+-            $this->publishes([$source => config_path('shield.php')]);
+-        } elseif ($this->app instanceof LumenApplication) {
+-            $this->app->configure('shield');
++        if ($this->app->runningInConsole()) {
++            $this->publishes([
++                __DIR__ . '/../config/shield.php' => $this->app->configPath('shield.php'),
++            ], 'shield-config');
+         }
+-
+-        $this->mergeConfigFrom($source, 'shield');
+     }
+ 
+     public function register(): void
+     {
+-        $this->app->singleton('shield', function (Container $app) {
+-            $config = $app['config']['shield.users'];
++        $this->mergeConfigFrom(__DIR__ . '/../config/shield.php', 'shield');
++
++        $this->app->scoped('shield', function (Container $app) {
++            $config = $app['config']->get('shield.users', []);
+ 
+-            return new Shield($config);
++            return new Shield(is_array($config) ? $config : []);
+         });
+ 
+         $this->app->alias('shield', Shield::class);
+@@ -53,6 +44,7 @@ class ShieldServiceProvider extends ServiceProvider
+     {
+         return [
+             'shield',
++            Shield::class,
+         ];
+     }
+ }
+diff --git a/tests/AbstractTestCase.php b/tests/AbstractTestCase.php
+index 2126832..52cc907 100644
+--- a/tests/AbstractTestCase.php
++++ b/tests/AbstractTestCase.php
+@@ -21,7 +21,7 @@ abstract class AbstractTestCase extends TestCase
+     protected function getPackageProviders($app)
+     {
+         return [
+-            ShieldServiceProvider::class
++            ShieldServiceProvider::class,
+         ];
+     }
+ 
+diff --git a/tests/ShieldIntegrationTest.php b/tests/ShieldIntegrationTest.php
+new file mode 100644
+index 0000000..0c2706a
+--- /dev/null
++++ b/tests/ShieldIntegrationTest.php
+@@ -0,0 +1,83 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Vinkla\Tests\Shield;
++
++use Vinkla\Shield\Shield;
++use Vinkla\Shield\ShieldMiddleware;
++use Vinkla\Shield\ShieldServiceProvider;
++
++class ShieldIntegrationTest extends AbstractTestCase
++{
++    protected function defineEnvironment($app): void
++    {
++        $app['config']->set('shield.users', $this->getUsers());
++    }
++
++    protected function defineRoutes($router): void
++    {
++        $router->aliasMiddleware('shield', ShieldMiddleware::class);
++        $router->get('/protected', fn() => response()->json([
++            'user' => app(Shield::class)->getCurrentUser(),
++        ]))->middleware('shield');
++        $router->get('/named', fn() => 'allowed')->middleware('shield:hasselhoff');
++    }
++
++    public function testMiddlewareProtectsLaravelRoutes(): void
++    {
++        $this->get('/protected')->assertUnauthorized()->assertHeader('WWW-Authenticate', 'Basic');
++        $this->withBasicAuth('user1', 'password1')->get('/protected')
++            ->assertOk()->assertExactJson(['user' => 'default']);
++        $this->withBasicAuth('user1', 'wrong')->get('/protected')->assertUnauthorized();
++        $this->assertNull($this->app->make(Shield::class)->getCurrentUser());
++    }
++
++    public function testNamedUserRestrictionWorksThroughTheRouter(): void
++    {
++        $this->withBasicAuth('user1', 'password1')->get('/named')->assertUnauthorized();
++        $this->withBasicAuth('user2', 'password2')->get('/named')->assertOk()->assertSee('allowed');
++    }
++
++    public function testAuthorizationHeaderIsReadAsBasicAuth(): void
++    {
++        $this->get('/protected', ['Authorization' => 'Basic ' . base64_encode('user1:password1')])
++            ->assertOk()->assertJsonPath('user', 'default');
++    }
++
++    public function testUnconfiguredCredentialsReturnUnauthorized(): void
++    {
++        $this->app['config']->set('shield.users', ['default' => [null, null]]);
++        $this->withBasicAuth('user1', 'password1')->get('/protected')->assertUnauthorized();
++    }
++
++    public function testMalformedUsersConfigurationReturnsUnauthorized(): void
++    {
++        $this->app['config']->set('shield.users', 'invalid');
++        $this->withBasicAuth('user1', 'password1')->get('/protected')->assertUnauthorized();
++    }
++
++    public function testContainerAliasUsesTheSameInstanceWithinAScope(): void
++    {
++        $this->assertSame($this->app->make('shield'), $this->app->make(Shield::class));
++    }
++
++    public function testWorkerScopeResetClearsAuthentication(): void
++    {
++        $shield = $this->app->make(Shield::class);
++        $this->assertTrue($shield->verify('user1', 'password1'));
++        $this->app->forgetScopedInstances();
++        $next = $this->app->make(Shield::class);
++        $this->assertNotSame($shield, $next);
++        $this->assertNull($next->getCurrentUser());
++    }
++
++    public function testConfigCanBePublishedUsingTheDocumentedTag(): void
++    {
++        $paths = ShieldServiceProvider::pathsToPublish(ShieldServiceProvider::class, 'shield-config');
++        $source = __DIR__ . '/../config/shield.php';
++        $this->assertCount(1, $paths);
++        $this->assertSame($this->app->configPath('shield.php'), array_values($paths)[0]);
++        $this->assertSame(realpath($source), realpath(array_keys($paths)[0]));
++    }
++}
+diff --git a/tests/ShieldServiceProviderTest.php b/tests/ShieldServiceProviderTest.php
+new file mode 100644
+index 0000000..80ef299
+--- /dev/null
++++ b/tests/ShieldServiceProviderTest.php
+@@ -0,0 +1,54 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Vinkla\Tests\Shield;
++
++use Illuminate\Config\Repository;
++use Illuminate\Foundation\Application;
++use PHPUnit\Framework\TestCase;
++use Vinkla\Shield\Shield;
++use Vinkla\Shield\ShieldServiceProvider;
++
++class ShieldServiceProviderTest extends TestCase
++{
++    public function testConfigurationIsAvailableBeforeBoot(): void
++    {
++        $app = new Application();
++        $app->instance('config', new Repository());
++        (new ShieldServiceProvider($app))->register();
++
++        $this->assertIsArray($app['config']->get('shield.users'));
++        $this->assertInstanceOf(Shield::class, $app->make('shield'));
++        $this->assertFalse($app->make(Shield::class)->verify('user', 'password'));
++    }
++
++    public function testApplicationConfigurationIsPreserved(): void
++    {
++        $users = ['custom' => [
++            password_hash('user', PASSWORD_BCRYPT, ['cost' => 4]),
++            password_hash('password', PASSWORD_BCRYPT, ['cost' => 4]),
++        ]];
++        $app = new Application();
++        $app->instance('config', new Repository(['shield' => ['users' => $users]]));
++        (new ShieldServiceProvider($app))->register();
++
++        $this->assertSame($users, $app['config']->get('shield.users'));
++        $this->assertTrue($app->make(Shield::class)->verify('user', 'password', 'custom'));
++    }
++
++    public function testCachedConfigurationIsUsedWithoutMergingDefaults(): void
++    {
++        $app = new class extends Application {
++            public function configurationIsCached()
++            {
++                return true;
++            }
++        };
++        $app->instance('config', new Repository(['shield' => ['users' => []]]));
++        (new ShieldServiceProvider($app))->register();
++
++        $this->assertSame([], $app['config']->get('shield.users'));
++        $this->assertFalse($app->make(Shield::class)->verify('user', 'password'));
++    }
++}
+diff --git a/tests/ShieldTest.php b/tests/ShieldTest.php
+index 9c88eda..41a08b2 100644
+--- a/tests/ShieldTest.php
++++ b/tests/ShieldTest.php
+@@ -64,17 +64,69 @@ class ShieldTest extends AbstractTestCase
+     {
+         $rc = new ReflectionClass(Shield::class);
+         $method = $rc->getMethod('getUsers');
+-        $method->setAccessible(true);
+ 
+         $shield = new Shield([1, 2]);
+         $return = $method->invokeArgs($shield, []);
+         $this->assertSame(2, count($return));
+ 
+         $shield = new Shield([1, 2]);
+-        $return = $method->invokeArgs($shield, [1]);
++        $return = $method->invokeArgs($shield, ['1']);
+         $this->assertSame(1, count($return));
+     }
+ 
++    public function testCurrentUserIsNullBeforeAuthentication(): void
++    {
++        $this->assertNull($this->getShield()->getCurrentUser());
++    }
++
++    public function testFailedAuthenticationClearsTheCurrentUser(): void
++    {
++        $shield = $this->getShield();
++        $this->assertTrue($shield->verify('user1', 'password1'));
++        $this->assertFalse($shield->verify('user1', 'wrong-password'));
++        $this->assertNull($shield->getCurrentUser());
++        $this->assertTrue($shield->verify('user2', 'password2'));
++        $this->assertFalse($shield->verify(null, null));
++        $this->assertNull($shield->getCurrentUser());
++    }
++
++    public function testCredentialsCannotBeCombinedAcrossUsers(): void
++    {
++        $shield = $this->getShield();
++        $this->assertFalse($shield->verify('user1', 'password2'));
++        $this->assertFalse($shield->verify('user2', 'password1'));
++        $this->assertFalse($shield->verify('user1', null));
++        $this->assertFalse($shield->verify(null, 'password1'));
++        $this->assertFalse($shield->verify('user1', 'password1', 'missing'));
++    }
++
++    public function testInvalidConfigurationFailsClosed(): void
++    {
++        foreach ([[], ['default' => null], ['default' => 'invalid'],
++            ['default' => []], ['default' => ['only-one-hash']],
++            ['default' => [null, null]], ['default' => [123, false]],
++            ['default' => ['invalid-hash', 'invalid-hash']]] as $users) {
++            $shield = new Shield($users);
++            $this->assertFalse($shield->verify('user1', 'password1'));
++            $this->assertNull($shield->getCurrentUser());
++        }
++    }
++
++    public function testInvalidUserDoesNotPreventAnotherUserFromAuthenticating(): void
++    {
++        $shield = new Shield(['invalid' => [null, null]] + $this->getUsers());
++        $this->assertTrue($shield->verify('user2', 'password2'));
++        $this->assertSame('hasselhoff', $shield->getCurrentUser());
++    }
++
++    public function testNumericUserKeysRemainSupported(): void
++    {
++        $users = $this->getUsers();
++        $shield = new Shield([7 => $users['default']]);
++        $this->assertTrue($shield->verify('user1', 'password1', '7'));
++        $this->assertSame('7', $shield->getCurrentUser());
++    }
++
+     protected function getShield()
+     {
+         return new Shield($this->getUsers());
